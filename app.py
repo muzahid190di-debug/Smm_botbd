@@ -24,7 +24,7 @@ def save_db(data):
     json.dump(data, f, indent=4)
 
 
-# SMM প্যানেল থেকে সমস্ত লাইভ সার্ভিস ফেচ ও ডায়নামিক প্রফিট মার্জিন যোগ করার লজিক
+# SMM প্যানেল থেকে সমস্ত লাইভ সার্ভিস ও মিনি/ম্যাক্স লিমিট সহ ফেচ করার লজিক
 def get_smm_services():
   try:
     payload = {"key": SMM_API_KEY, "action": "services"}
@@ -35,24 +35,25 @@ def get_smm_services():
       for s in services:
         original_rate = float(s.get("rate", 0))
 
-        # 🎯 তোর চাহিদামতো অটোমেটিক প্রফিট যোগ করার স্মার্ট লজিক:
+        # তোর চাহিদামতো স্মার্ট প্রফিট মার্জিন যোগ করা
         if original_rate <= 50:
-          profit = 10  # ছোট অফারে ১০ টাকা লাভ
+          profit = 10
         elif original_rate <= 150:
-          profit = 20  # মাঝারি অফারে ২০ টাকা লাভ
+          profit = 20
         elif original_rate <= 300:
-          profit = 35  # বড় অফারে ৩৫ টাকা লাভ
+          profit = 35
         else:
-          profit = 50  # প্রিমিয়াম/অনেক দামি অফারে ৫০ টাকা লাভ
+          profit = 50
 
         final_rate = round(original_rate + profit, 2)
+        category = s.get("category", "General")
 
         formatted_services[str(s["service"])] = {
             "name": s["name"],
-            "category": s.get("category", "General"),
+            "category": category,
             "price_per_1k": final_rate,
-            "min": s.get("min", 10),
-            "max": s.get("max", 10000),
+            "min": int(s.get("min", 10)),
+            "max": int(s.get("max", 10000)),
         }
       return formatted_services
   except Exception:
@@ -62,7 +63,7 @@ def get_smm_services():
 
 app = Flask(__name__)
 
-# ==================== প্রিমিয়াম ও আধুনিক মিনি অ্যাপ UI ====================
+# ==================== প্রিমিয়াম ক্যাটাগরি ভিত্তিক UI ====================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="bn">
@@ -74,42 +75,47 @@ HTML_TEMPLATE = """
     <style>
         :root {
             --bg-color: #0b0f19;
-            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-bg: #1e293b;
             --accent: #38bdf8;
             --accent-gradient: linear-gradient(135deg, #3b82f6, #06b6d4);
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
-            --border: rgba(255, 255, 255, 0.1);
+            --border: #334155;
         }
-        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg-color); color: var(--text-main); padding: 12px; margin: 0; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-color); color: var(--text-main); padding: 10px; margin: 0; }
         .container { max-width: 450px; margin: auto; }
         
         .wallet-card { 
             background: var(--accent-gradient); 
-            color: white; padding: 20px; border-radius: 20px; text-align: center; margin-bottom: 15px; 
-            box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3); 
+            color: white; padding: 18px; border-radius: 16px; text-align: center; margin-bottom: 12px; 
+            box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3); 
         }
-        .wallet-card h3 { margin: 0; font-size: 13px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
-        .wallet-card h1 { margin: 8px 0 0 0; font-size: 32px; font-weight: 800; }
+        .wallet-card h3 { margin: 0; font-size: 12px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
+        .wallet-card h1 { margin: 5px 0 0 0; font-size: 28px; font-weight: 800; }
 
-        .tab-buttons { display: flex; gap: 8px; margin-bottom: 15px; background: rgba(15, 23, 42, 0.8); padding: 5px; border-radius: 14px; border: 1px solid var(--border); }
-        .tab-btn { flex: 1; padding: 12px; background: transparent; border: none; color: var(--text-muted); border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 14px; transition: 0.3s; }
-        .tab-btn.active { background: var(--accent-gradient); color: white; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); }
+        .tab-buttons { display: flex; gap: 8px; margin-bottom: 12px; background: #0f172a; padding: 4px; border-radius: 12px; border: 1px solid var(--border); }
+        .tab-btn { flex: 1; padding: 10px; background: transparent; border: none; color: var(--text-muted); border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 13px; transition: 0.3s; }
+        .tab-btn.active { background: var(--accent-gradient); color: white; }
 
-        .card { background: var(--card-bg); backdrop-filter: blur(10px); padding: 20px; border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); margin-bottom: 15px; border: 1px solid var(--border); }
-        h2 { text-align: center; color: var(--accent); margin-top: 0; font-size: 18px; font-weight: 700; margin-bottom: 15px; }
-        
-        label { font-weight: 600; margin-top: 12px; display: block; font-size: 13px; color: var(--text-muted); }
-        select, input { width: 100%; padding: 14px; margin-top: 6px; border-radius: 12px; border: 1px solid var(--border); background: rgba(15, 23, 42, 0.9); color: white; box-sizing: border-box; font-size: 14px; outline: none; transition: 0.3s; }
-        select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
-        
-        .price-box { margin-top: 15px; background: rgba(15, 23, 42, 0.8); padding: 14px; border-radius: 12px; font-weight: 700; color: var(--accent); text-align: center; border: 1px solid var(--border); font-size: 16px; }
-        
-        button.action-btn { width: 100%; background: var(--accent-gradient); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 16px; font-weight: 700; margin-top: 18px; cursor: pointer; box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4); transition: 0.3s; }
-        button.action-btn:active { transform: scale(0.98); }
+        .card { background: var(--card-bg); padding: 16px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.4); margin-bottom: 12px; border: 1px solid var(--border); }
+        h2 { text-align: center; color: var(--accent); margin-top: 0; font-size: 16px; font-weight: 700; margin-bottom: 12px; }
 
-        .bkash-box { background: rgba(244, 63, 94, 0.1); border: 1px dashed #f43f5e; padding: 15px; border-radius: 14px; text-align: center; margin-bottom: 15px; }
-        .bkash-number { font-size: 18px; font-weight: 800; color: #fb7185; margin-top: 5px; letter-spacing: 1px; }
+        /* ক্যাটাগরি বক্স সেকশন */
+        .category-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+        .cat-box { background: #0f172a; border: 1px solid var(--border); padding: 12px; border-radius: 10px; text-align: center; cursor: pointer; font-weight: 600; font-size: 13px; transition: 0.2s; color: var(--text-muted); }
+        .cat-box:hover, .cat-box.active { border-color: var(--accent); color: var(--accent); background: rgba(56, 189, 248, 0.05); }
+        
+        label { font-weight: 600; margin-top: 10px; display: block; font-size: 12px; color: var(--text-muted); }
+        select, input { width: 100%; padding: 12px; margin-top: 4px; border-radius: 10px; border: 1px solid var(--border); background: #0f172a; color: white; box-sizing: border-box; font-size: 13px; outline: none; }
+        select:focus, input:focus { border-color: var(--accent); }
+
+        .info-limits { font-size: 11px; color: #fbbf24; margin-top: 4px; }
+        .price-box { margin-top: 12px; background: #0f172a; padding: 12px; border-radius: 10px; font-weight: 700; color: var(--accent); text-align: center; border: 1px solid var(--border); font-size: 14px; }
+        
+        button.action-btn { width: 100%; background: var(--accent-gradient); color: white; border: none; padding: 14px; border-radius: 10px; font-size: 15px; font-weight: 700; margin-top: 15px; cursor: pointer; }
+        
+        .bkash-box { background: rgba(244, 63, 94, 0.1); border: 1px dashed #f43f5e; padding: 12px; border-radius: 10px; text-align: center; margin-bottom: 10px; }
+        .bkash-number { font-size: 16px; font-weight: 800; color: #fb7185; margin-top: 4px; }
 
         .hidden { display: none; }
     </style>
@@ -128,20 +134,24 @@ HTML_TEMPLATE = """
 
         <!-- অর্ডার সেকশন -->
         <div id="orderSection" class="card">
-            <h2>সরাসরি এসএসএম সার্ভিস অর্ডার</h2>
+            <h2>সোশ্যাল মিডিয়া সার্ভিস অর্ডার</h2>
             
-            <label for="service">সার্ভিস নির্বাচন করুন:</label>
-            <select id="service" onchange="calculatePrice()">
-                {% for key, s in services.items() %}
-                    <option value="{{ key }}" data-price="{{ s.price_per_1k }}">{{ s.name }} (৳{{ s.price_per_1k }}/1k)</option>
-                {% endfor %}
+            <label>প্লাটফর্ম বা ক্যাটাগরি বেছে নিন:</label>
+            <div class="category-grid" id="categoryGrid">
+                <!-- ডায়নামিকভাবে ক্যাটাগরিগুলো এখানে আসবে -->
+            </div>
+
+            <label for="service">নির্দিষ্ট সার্ভিস:</label>
+            <select id="service" onchange="updateServiceLimits()">
+                <!-- সার্ভিস লিস্ট -->
             </select>
+            <div class="info-limits" id="limitsInfo">মিনিমাম: ১০ | ম্যাক্সিমাম: ১০০০০</div>
 
             <label for="link">টার্গেট লিংক (Profile/Video URL):</label>
             <input type="text" id="link" placeholder="https://..." required>
 
             <label for="quantity">পরিমাণ (Quantity):</label>
-            <input type="number" id="quantity" value="1000" min="10" oninput="calculatePrice()">
+            <input type="number" id="quantity" value="1000" oninput="calculatePrice()">
 
             <div class="price-box" id="totalPrice">মোট খরচ: ৳0</div>
             <button class="action-btn" onclick="submitOrder()">অর্ডার কনফার্ম করুন</button>
@@ -151,7 +161,7 @@ HTML_TEMPLATE = """
         <div id="depositSection" class="card hidden">
             <h2>বিকাশ ব্যালেন্স যোগ করুন</h2>
             <div class="bkash-box">
-                <span style="font-size: 13px; color: #cbd5e1;">আমাদের বিকাশ পার্সোনাল নাম্বারে Send Money করুন:</span>
+                <span style="font-size: 12px; color: #cbd5e1;">বিকাশ পার্সোনাল নাম্বারে Send Money করুন:</span>
                 <div class="bkash-number">01605969856</div>
             </div>
             
@@ -172,11 +182,66 @@ HTML_TEMPLATE = """
         let username = tg.initDataUnsafe?.user?.username || "Unknown";
         let firstName = tg.initDataUnsafe?.user?.first_name || "User";
 
+        const allServices = {{ services | tojson }};
+        let currentCategory = "";
+
+        // ব্যালেন্স ফেচ
         fetch('/get_balance?user_id=' + userTgId)
             .then(res => res.json())
             .then(data => {
                 document.getElementById('userBalance').innerText = data.balance.toFixed(2);
             });
+
+        // ক্যাটাগরিগুলো আলাদা করা
+        function initCategories() {
+            const categories = [...new Set(Object.values(allServices).map(s => s.category))];
+            const grid = document.getElementById('categoryGrid');
+            grid.innerHTML = "";
+            
+            categories.forEach((cat, index) => {
+                const div = document.createElement('div');
+                div.className = "cat-box" + (index === 0 ? " active" : "");
+                div.innerText = cat;
+                div.onclick = () => selectCategory(cat, div);
+                grid.appendChild(div);
+                if(index === 0) selectCategory(cat, div);
+            });
+        }
+
+        function selectCategory(cat, element) {
+            document.querySelectorAll('.cat-box').forEach(b => b.classList.remove('active'));
+            element.classList.add('active');
+            currentCategory = cat;
+
+            const select = document.getElementById('service');
+            select.innerHTML = "";
+
+            for(const [id, s] of Object.entries(allServices)) {
+                if(s.category === cat) {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.setAttribute('data-price', s.price_per_1k);
+                    opt.setAttribute('data-min', s.min);
+                    opt.setAttribute('data-max', s.max);
+                    opt.innerText = `${s.name} (৳${s.price_per_1k}/1k)`;
+                    select.appendChild(opt);
+                }
+            }
+            updateServiceLimits();
+        }
+
+        function updateServiceLimits() {
+            const select = document.getElementById('service');
+            const selectedOpt = select.options[select.selectedIndex];
+            if(selectedOpt) {
+                const min = selectedOpt.getAttribute('data-min');
+                const max = selectedOpt.getAttribute('data-max');
+                document.getElementById('limitsInfo').innerText = `মিনিমাম: ${min} | ম্যাক্সিমাম: ${max}`;
+                document.getElementById('quantity').min = min;
+                document.getElementById('quantity').max = max;
+            }
+            calculatePrice();
+        }
 
         function switchTab(tab) {
             if(tab === 'order') {
@@ -194,7 +259,10 @@ HTML_TEMPLATE = """
 
         function calculatePrice() {
             const select = document.getElementById('service');
-            const pricePer1k = select.options[select.selectedIndex].getAttribute('data-price');
+            const selectedOpt = select.options[select.selectedIndex];
+            if(!selectedOpt) return;
+
+            const pricePer1k = selectedOpt.getAttribute('data-price');
             const qty = document.getElementById('quantity').value || 0;
             const total = (qty / 1000) * pricePer1k;
             document.getElementById('totalPrice').innerText = "মোট খরচ: ৳" + total.toFixed(2);
@@ -204,9 +272,17 @@ HTML_TEMPLATE = """
             const serviceKey = document.getElementById('service').value;
             const link = document.getElementById('link').value;
             const quantity = document.getElementById('quantity').value;
+            const selectedOpt = document.getElementById('service').selectedOptions[0];
+            
+            const min = parseInt(selectedOpt.getAttribute('data-min'));
+            const max = parseInt(selectedOpt.getAttribute('data-max'));
 
-            if(!link || !quantity || quantity <= 0) {
+            if(!link || !quantity) {
                 alert("দয়া করে সঠিক লিংক ও পরিমাণ দিন!");
+                return;
+            }
+            if(quantity < min || quantity > max) {
+                alert(`পরিমাণ অবশ্যই ${min} থেকে ${max}-এর মধ্যে হতে হবে!`);
                 return;
             }
 
@@ -239,7 +315,7 @@ HTML_TEMPLATE = """
             });
         }
 
-        calculatePrice();
+        initCategories();
     </script>
 </body>
 </html>
