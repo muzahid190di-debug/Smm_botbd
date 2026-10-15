@@ -10,6 +10,9 @@ SMM_API_URL = "https://bdsmmpanel.com/api/v2"
 
 # ডাটাবেস ফাইল
 DB_FILE = "users_db.json"
+ADMIN_CHAT_ID = os.environ.get(
+    "ADMIN_CHAT_ID", "YOUR_ADMIN_TELEGRAM_ID"
+)  # তোর টেলিগ্রাম আইডি এখানে দিবি
 
 
 def load_db():
@@ -24,24 +27,49 @@ def save_db(data):
     json.dump(data, f, indent=4)
 
 
-# সার্ভিস লিস্ট ও প্রফিট প্রাইস (টাকা)
-SERVICES_CONFIG = {
-    "1": {
-        "id": 101,
-        "name": "🔥 Facebook Followers (Non-Drop)",
-        "price_per_1k": 120,
-    },
-    "2": {"id": 202, "name": "⚡ YouTube Subscribers (Real)", "price_per_1k": 350},
-    "3": {
-        "id": 303,
-        "name": "🚀 TikTok Followers (Instant)",
-        "price_per_1k": 150,
-    },
-}
+# SMM API থেকে রিয়েল সার্ভিস ফেচ করার ফাংশন
+def get_smm_services():
+  try:
+    payload = {"key": SMM_API_KEY, "action": "services"}
+    response = requests.post(SMM_API_URL, data=payload)
+    if response.status_code == 200:
+      services = response.json()
+      # প্রথম ২০টি সার্ভিস ফিল্টার করে সুন্দর ফরম্যাটে নেওয়া
+      formatted_services = {}
+      for s in services[:20]:
+        # পাইকারি দামের সাথে প্রফিট যোগ করে রিটেইল প্রাইস নির্ধারণ (যেমন ২০% প্রফিট)
+        rate = float(s.get("rate", 100))
+        sell_rate = round(rate * 1.3, 2)
+        formatted_services[str(s["service"])] = {
+            "name": s["name"],
+            "price_per_1k": sell_rate,
+            "min": s.get("min", 10),
+            "max": s.get("max", 10000),
+        }
+      return formatted_services
+  except Exception:
+    pass
+
+  # API ফেইল করলে ডিফল্ট কিছু সার্ভিস ব্যাকআপ
+  return {
+      "101": {
+          "name": "🔥 Facebook Followers (Non-Drop)",
+          "price_per_1k": 150,
+          "min": 100,
+          "max": 50000,
+      },
+      "202": {
+          "name": "⚡ YouTube Subscribers (Real)",
+          "price_per_1k": 400,
+          "min": 50,
+          "max": 10000,
+      },
+  }
+
 
 app = Flask(__name__)
 
-# ==================== মিনি অ্যাপ ফ্রন্টএন্ড (UI) ====================
+# ==================== প্রিমিয়াম মিনি অ্যাপ ফ্রন্টএন্ড (UI) ====================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="bn">
@@ -55,7 +83,7 @@ HTML_TEMPLATE = """
         .container { max-width: 400px; margin: auto; }
         .card { background: #1e293b; padding: 20px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); margin-bottom: 15px; border: 1px solid #334155; }
         .wallet-card { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 15px; border-radius: 14px; text-align: center; margin-bottom: 15px; }
-        h2 { text-align: center; color: #38bdf8; margin-top: 0; font-size: 22px; }
+        h2 { text-align: center; color: #38bdf8; margin-top: 0; font-size: 20px; }
         label { font-weight: 600; margin-top: 12px; display: block; font-size: 14px; color: #cbd5e1; }
         select, input { width: 100%; padding: 12px; margin-top: 6px; border-radius: 10px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing: border-box; font-size: 14px; }
         .price-box { margin-top: 15px; background: #334155; padding: 12px; border-radius: 10px; font-weight: bold; color: #38bdf8; text-align: center; }
@@ -71,7 +99,7 @@ HTML_TEMPLATE = """
     <div class="container">
         <div class="wallet-card">
             <h3 style="margin:0; font-size: 14px; opacity: 0.9;">তোর বর্তমান ব্যালেন্স</h3>
-            <h1 style="margin: 5px 0 0 0; font-size: 28px;">৳ <span id="userBalance">500.00</span></h1>
+            <h1 style="margin: 5px 0 0 0; font-size: 28px;">৳ <span id="userBalance">0.00</span></h1>
         </div>
 
         <div class="tab-buttons">
@@ -93,7 +121,7 @@ HTML_TEMPLATE = """
             <input type="text" id="link" placeholder="https://..." required>
 
             <label for="quantity">পরিমাণ (Quantity):</label>
-            <input type="number" id="quantity" value="1000" min="100" oninput="calculatePrice()">
+            <input type="number" id="quantity" value="1000" min="10" oninput="calculatePrice()">
 
             <div class="price-box" id="totalPrice">মোট খরচ: ৳0</div>
             <button onclick="submitOrder()">অর্ডার কনফার্ম করুন</button>
@@ -101,10 +129,10 @@ HTML_TEMPLATE = """
 
         <!-- ডিপোজিট সেকশন -->
         <div id="depositSection" class="card hidden">
-            <h2>বিকাশ এ ট্যাকা অ্যাড (মিন: ১০৳)</h2>
+            <h2>বিকাশে টাকা অ্যাড (মিন: ১০৳)</h2>
             <p style="font-size: 13px; color: #94a3b8; text-align: center;">আমাদের বিকাশ পার্সোনাল নাম্বারে Send Money করে নিচে ট্রানজেকশন আইডি দাও।</p>
             <div style="background: #0f172a; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; color: #fbbf24; margin-bottom: 10px;">
-                বিকাশ পার্সোনাল: 01700000000
+                বিকাশ পার্সোনাল: 01605969856
             </div>
             
             <label for="depAmount">পরিমাণ (টাকা):</label>
@@ -121,6 +149,14 @@ HTML_TEMPLATE = """
         const tg = window.Telegram.WebApp;
         tg.expand();
         let userTgId = tg.initDataUnsafe?.user?.id || "12345";
+        let username = tg.initDataUnsafe?.user?.username || "Unknown";
+
+        // ব্যালেন্স লোড করার ফেচ
+        fetch('/get_balance?user_id=' + userTgId)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('userBalance').innerText = data.balance.toFixed(2);
+            });
 
         function switchTab(tab) {
             if(tab === 'order') {
@@ -154,14 +190,14 @@ HTML_TEMPLATE = """
                 return;
             }
 
-            tg.sendData(JSON.stringify({
-                type: "order",
-                user_id: userTgId,
-                service_key: serviceKey,
-                link: link,
-                quantity: quantity
-            }));
-            tg.close();
+            fetch('/api/order', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: userTgId, service_key: serviceKey, link: link, quantity: quantity})
+            }).then(res => res.json()).then(data => {
+                alert(data.message);
+                if(data.success) location.reload();
+            });
         }
 
         function submitDeposit() {
@@ -173,13 +209,14 @@ HTML_TEMPLATE = """
                 return;
             }
 
-            tg.sendData(JSON.stringify({
-                type: "deposit",
-                user_id: userTgId,
-                amount: amount,
-                trx_id: trxId
-            }));
-            tg.close();
+            fetch('/api/deposit', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: userTgId, username: username, amount: amount, trx_id: trxId})
+            }).then(res => res.json()).then(data => {
+                alert(data.message);
+                tg.close();
+            });
         }
 
         calculatePrice();
@@ -191,25 +228,117 @@ HTML_TEMPLATE = """
 
 @app.route("/")
 def index():
-  return render_template_string(HTML_TEMPLATE, services=SERVICES_CONFIG)
+  services = get_smm_services()
+  return render_template_string(HTML_TEMPLATE, services=services)
 
 
-# ==================== টেলিগ্রাম ওয়েবহুক ও বট হ্যান্ডলার ====================
+@app.route("/get_balance")
+def get_balance():
+  user_id = request.args.get("user_id")
+  db = load_db()
+  user_data = db.get(str(user_id), {"balance": 0.0})
+  return {"balance": user_data.get("balance", 0.0)}
+
+
+@app.route("/api/order", methods=["POST"])
+def api_order():
+  data = request.json
+  user_id = str(data.get("user_id"))
+  service_key = data.get("service_key")
+  link = data.get("link")
+  quantity = int(data.get("quantity"))
+
+  services = get_smm_services()
+  if service_key not in services:
+    return {"success": False, "message": "সার্ভিসটি পাওয়া যায়নি!"}
+
+  service_info = services[service_key]
+  total_cost = (quantity / 1000) * service_info["price_per_1k"]
+
+  db = load_db()
+  if user_id not in db:
+    db[user_id] = {"balance": 0.0}
+
+  if db[user_id]["balance"] < total_cost:
+    return {
+        "success": False,
+        "message": "তোর পর্যাপ্ত ব্যালেন্স নেই! আগে ব্যালেন্স অ্যাড কর।",
+    }
+
+  # SMM প্যানেলে অর্ডার প্লেস করা
+  payload = {
+      "key": SMM_API_KEY,
+      "action": "add",
+      "service": service_info["id"],
+      "link": link,
+      "quantity": quantity,
+  }
+  resp = requests.post(SMM_API_URL, data=payload).json()
+
+  if "order" in resp:
+    db[user_id]["balance"] -= total_cost
+    save_db(db)
+    return {
+        "success": True,
+        "message": f"আলহামদুলিল্লাহ! অর্ডার সফল হয়েছে। অর্ডার আইডি: {resp['order']}",
+    }
+  else:
+    return {
+        "success": False,
+        "message": f"অর্ডার ফেইল করেছে: {resp.get('error', 'অজানা সমস্যা')}",
+    }
+
+
+@app.route("/api/deposit", methods=["POST"])
+def api_deposit():
+  data = request.json
+  user_id = str(data.get("user_id"))
+  username = data.get("username", "Unknown")
+  amount = float(data.get("amount"))
+  trx_id = data.get("trx_id")
+
+  # অ্যাডমিনকে টেলিগ্রামে নোটিফিকেশন পাঠানো যাতে সে এপ্রুভ করতে পারে
+  if ADMIN_CHAT_ID and ADMIN_CHAT_ID != "YOUR_ADMIN_TELEGRAM_ID":
+    msg = (
+        f"🔔 **নতুন ডিপোজিট রিকোয়েস্ট!**\n\n👤 ইউজার আইডি: `{user_id}`\n🌐 ইউজারনেম:"
+        f" @{username}\n💰 পরিমাণ: ৳{amount}\n💳 TrxID:"
+        f" `{trx_id}`\n\nএপ্রুভ করতে নিচের কমান্ড দাও:\n`/addbal {user_id}"
+        f" {amount}`"
+    )
+    requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+        json={"chat_id": ADMIN_CHAT_ID, "text": msg, "parse_mode": "Markdown"},
+    )
+
+  return {
+      "success": True,
+      "message": (
+          "পেমেন্ট রিকোয়েস্ট সফলভাবে সাবমিট হয়েছে! অ্যাডমিন যাচাই করে ব্যালেন্স"
+          " যোগ করে দেবে।"
+      ),
+  }
+
+
+# ==================== টেলিগ্রাম বট ওয়েবহুক ও কমান্ড ====================
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
   data = request.get_json()
   if data and "message" in data:
     chat_id = data["message"]["chat"]["id"]
     text = data["message"].get("text", "")
+    user_id = str(data["message"]["from"]["id"])
 
     if text.startswith("/start"):
       web_app_url = "https://smm-botbd.onrender.com"
       payload = {
           "chat_id": chat_id,
-          "text": "স্বাগতম বদ্দা! নিচের বাটনে ক্লিক করে খুব সহজে অর্ডার করো:",
+          "text": (
+              "আসসালামু আলাইকুম বদ্দা! আমাদের অফিশিয়াল SMM প্যানেল মিনি অ্যাপে"
+              " স্বাগতম। নিচে ক্লিক করে অর্ডার করো:"
+          ),
           "reply_markup": {
               "inline_keyboard": [[{
-                  "text": "🚀 এসএসএম প্যানেল মিনি অ্যাপ খুলুন",
+                  "text": "🚀 এসএসএম প্যানেল মিনি অ্যাপ ওপেন করো",
                   "web_app": {"url": web_app_url},
               }]]
           },
@@ -218,10 +347,43 @@ def webhook():
           f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload
       )
 
+    # অ্যাডমিনের জন্য ব্যালেন্স এপ্রুভ করার কমান্ড: /addbal <user_id> <amount>
+    elif text.startswith("/addbal") and str(chat_id) == str(ADMIN_CHAT_ID):
+      parts = text.split()
+      if len(parts) == 3:
+        target_user = parts[1]
+        add_amount = float(parts[2])
+        db = load_db()
+        if target_user not in db:
+          db[target_user] = {"balance": 0.0}
+        db[target_user]["balance"] += add_amount
+        save_db(db)
+
+        # ইউজারকে জানানো
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": target_user,
+                "text": (
+                    f"আলহামদুলিল্লাহ বদ্দা! তোর একাউন্টে ৳{add_amount} যোগ করা"
+                    " হয়েছে।"
+                ),
+            },
+        )
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": (
+                    f"সফল! ইউজার {target_user}-কে ৳{add_amount} ব্যালেন্স দেওয়া"
+                    " হয়েছে।"
+                ),
+            },
+        )
+
   return "OK", 200
 
 
-# অ্যাপ রান করার সময় অটোমেটিক টেলিগ্রাম ওয়েবহুক সেট হবে
 def set_webhook_automatically():
   if BOT_TOKEN and BOT_TOKEN != "YOUR_TELEGRAM_BOT_TOKEN":
     webhook_url = f"https://smm-botbd.onrender.com/{BOT_TOKEN}"
@@ -237,4 +399,3 @@ if __name__ == "__main__":
   set_webhook_automatically()
   port = int(os.environ.get("PORT", 5000))
   app.run(host="0.0.0.0", port=port)
-
