@@ -2,15 +2,13 @@ import json
 import os
 import requests
 from flask import Flask, render_template_string, request
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
-from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ==================== কনফিগারেশন ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 SMM_API_KEY = os.environ.get("SMM_API_KEY", "YOUR_BD_SMM_PANEL_API_KEY")
 SMM_API_URL = "https://bdsmmpanel.com/api/v2"
 
-# ইউজার ডাটা এবং ওয়ালেট ব্যালেন্স জমানোর ফাইল ডাটাবেস
+# ডাটাবেস ফাইল
 DB_FILE = "users_db.json"
 
 
@@ -43,7 +41,7 @@ SERVICES_CONFIG = {
 
 app = Flask(__name__)
 
-# ==================== আকর্ষণীয় ফ্রন্টএন্ড মিনি অ্যাপ (UI) ====================
+# ==================== মিনি অ্যাপ ফ্রন্টএন্ড (UI) ====================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="bn">
@@ -73,7 +71,7 @@ HTML_TEMPLATE = """
     <div class="container">
         <div class="wallet-card">
             <h3 style="margin:0; font-size: 14px; opacity: 0.9;">তোর বর্তমান ব্যালেন্স</h3>
-            <h1 style="margin: 5px 0 0 0; font-size: 28px;">৳ <span id="userBalance">0.00</span></h1>
+            <h1 style="margin: 5px 0 0 0; font-size: 28px;">৳ <span id="userBalance">500.00</span></h1>
         </div>
 
         <div class="tab-buttons">
@@ -122,10 +120,7 @@ HTML_TEMPLATE = """
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
-        
         let userTgId = tg.initDataUnsafe?.user?.id || "12345";
-
-        document.getElementById('userBalance').innerText = "500.00"; 
 
         function switchTab(tab) {
             if(tab === 'order') {
@@ -199,57 +194,47 @@ def index():
   return render_template_string(HTML_TEMPLATE, services=SERVICES_CONFIG)
 
 
-# ==================== টেলিগ্রাম বট হ্যান্ডলার ও সার্ভার লজিক ====================
-telegram_app = None
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  web_app_url = "https://smm-botbd.onrender.com"
-  keyboard = [[
-      InlineKeyboardButton(
-          "🚀 এসএসএম প্যানেল মিনি অ্যাপ খুলুন",
-          web_app=WebAppInfo(url=web_app_url),
-      )
-  ]]
-  reply_markup = InlineKeyboardMarkup(keyboard)
-  await update.message.reply_text(
-      "স্বাগতম বদ্দা! নিচের বাটনে ক্লিক করে খুব সহজে অর্ডার করো:",
-      reply_markup=reply_markup,
-  )
-
-
+# ==================== টেলিগ্রাম ওয়েবহুক ও বট হ্যান্ডলার ====================
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-  if telegram_app and telegram_app.bot:
-    json_str = request.get_data().decode("UTF-8")
-    update = Update.de_json(json.loads(json_str), telegram_app.bot)
-    telegram_app.update_queue.put_nowait(update)
+  data = request.get_json()
+  if data and "message" in data:
+    chat_id = data["message"]["chat"]["id"]
+    text = data["message"].get("text", "")
+
+    if text.startswith("/start"):
+      web_app_url = "https://smm-botbd.onrender.com"
+      payload = {
+          "chat_id": chat_id,
+          "text": "স্বাগতম বদ্দা! নিচের বাটনে ক্লিক করে খুব সহজে অর্ডার করো:",
+          "reply_markup": {
+              "inline_keyboard": [[{
+                  "text": "🚀 এসএসএম প্যানেল মিনি অ্যাপ খুলুন",
+                  "web_app": {"url": web_app_url},
+              }]]
+          },
+      }
+      requests.post(
+          f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload
+      )
+
   return "OK", 200
 
 
-async def main():
-  global telegram_app
-  telegram_app = Application.builder().token(BOT_TOKEN).build()
-
-  # /start কমান্ড হ্যান্ডলার রেজিস্টার করা হলো
-  telegram_app.add_handler(CommandHandler("start", start))
-
-  await telegram_app.initialize()
-  await telegram_app.start()
-
-  # 🔥 অটোমেটিক ওয়েবহুক সেট করার চমৎকার কোড (কোনো ব্রাউজার বা লিংক লাগবে না)
+# অ্যাপ রান করার সময় অটোমেটিক টেলিগ্রাম ওয়েবহুক সেট হবে
+def set_webhook_automatically():
   if BOT_TOKEN and BOT_TOKEN != "YOUR_TELEGRAM_BOT_TOKEN":
     webhook_url = f"https://smm-botbd.onrender.com/{BOT_TOKEN}"
-    requests.get(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
-    )
-
-  # Render-এর জন্য ফ্লাস্ক সার্ভার পোর্ট কনফিগারেশন
-  port = int(os.environ.get("PORT", 5000))
-  app.run(host="0.0.0.0", port=port)
+    try:
+      requests.get(
+          f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
+      )
+    except Exception:
+      pass
 
 
 if __name__ == "__main__":
-  import asyncio
+  set_webhook_automatically()
+  port = int(os.environ.get("PORT", 5000))
+  app.run(host="0.0.0.0", port=port)
 
-  asyncio.run(main())
