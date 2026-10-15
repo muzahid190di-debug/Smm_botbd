@@ -8,11 +8,8 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 SMM_API_KEY = os.environ.get("SMM_API_KEY", "YOUR_BD_SMM_PANEL_API_KEY")
 SMM_API_URL = "https://bdsmmpanel.com/api/v2"
 
-# ডাটাবেস ফাইল
 DB_FILE = "users_db.json"
-ADMIN_CHAT_ID = os.environ.get(
-    "ADMIN_CHAT_ID", "YOUR_ADMIN_TELEGRAM_ID"
-)  # তোর টেলিগ্রাম আইডি এখানে দিবি
+ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "YOUR_ADMIN_TELEGRAM_ID")
 
 
 def load_db():
@@ -27,49 +24,45 @@ def save_db(data):
     json.dump(data, f, indent=4)
 
 
-# SMM API থেকে রিয়েল সার্ভিস ফেচ করার ফাংশন
+# SMM প্যানেল থেকে সমস্ত লাইভ সার্ভিস ফেচ ও ডায়নামিক প্রফিট মার্জিন যোগ করার লজিক
 def get_smm_services():
   try:
     payload = {"key": SMM_API_KEY, "action": "services"}
     response = requests.post(SMM_API_URL, data=payload)
     if response.status_code == 200:
       services = response.json()
-      # প্রথম ২০টি সার্ভিস ফিল্টার করে সুন্দর ফরম্যাটে নেওয়া
       formatted_services = {}
-      for s in services[:20]:
-        # পাইকারি দামের সাথে প্রফিট যোগ করে রিটেইল প্রাইস নির্ধারণ (যেমন ২০% প্রফিট)
-        rate = float(s.get("rate", 100))
-        sell_rate = round(rate * 1.3, 2)
+      for s in services:
+        original_rate = float(s.get("rate", 0))
+
+        # 🎯 তোর চাহিদামতো অটোমেটিক প্রফিট যোগ করার স্মার্ট লজিক:
+        if original_rate <= 50:
+          profit = 10  # ছোট অফারে ১০ টাকা লাভ
+        elif original_rate <= 150:
+          profit = 20  # মাঝারি অফারে ২০ টাকা লাভ
+        elif original_rate <= 300:
+          profit = 35  # বড় অফারে ৩৫ টাকা লাভ
+        else:
+          profit = 50  # প্রিমিয়াম/অনেক দামি অফারে ৫০ টাকা লাভ
+
+        final_rate = round(original_rate + profit, 2)
+
         formatted_services[str(s["service"])] = {
             "name": s["name"],
-            "price_per_1k": sell_rate,
+            "category": s.get("category", "General"),
+            "price_per_1k": final_rate,
             "min": s.get("min", 10),
             "max": s.get("max", 10000),
         }
       return formatted_services
   except Exception:
     pass
-
-  # API ফেইল করলে ডিফল্ট কিছু সার্ভিস ব্যাকআপ
-  return {
-      "101": {
-          "name": "🔥 Facebook Followers (Non-Drop)",
-          "price_per_1k": 150,
-          "min": 100,
-          "max": 50000,
-      },
-      "202": {
-          "name": "⚡ YouTube Subscribers (Real)",
-          "price_per_1k": 400,
-          "min": 50,
-          "max": 10000,
-      },
-  }
+  return {}
 
 
 app = Flask(__name__)
 
-# ==================== প্রিমিয়াম মিনি অ্যাপ ফ্রন্টএন্ড (UI) ====================
+# ==================== প্রিমিয়াম ও আধুনিক মিনি অ্যাপ UI ====================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="bn">
@@ -79,27 +72,53 @@ HTML_TEMPLATE = """
     <title>BD SMM Panel Mini App</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; margin: 0; }
-        .container { max-width: 400px; margin: auto; }
-        .card { background: #1e293b; padding: 20px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); margin-bottom: 15px; border: 1px solid #334155; }
-        .wallet-card { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 15px; border-radius: 14px; text-align: center; margin-bottom: 15px; }
-        h2 { text-align: center; color: #38bdf8; margin-top: 0; font-size: 20px; }
-        label { font-weight: 600; margin-top: 12px; display: block; font-size: 14px; color: #cbd5e1; }
-        select, input { width: 100%; padding: 12px; margin-top: 6px; border-radius: 10px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing: border-box; font-size: 14px; }
-        .price-box { margin-top: 15px; background: #334155; padding: 12px; border-radius: 10px; font-weight: bold; color: #38bdf8; text-align: center; }
-        button { width: 100%; background: #2563eb; color: white; border: none; padding: 14px; border-radius: 10px; font-size: 16px; font-weight: bold; margin-top: 15px; cursor: pointer; transition: 0.3s; }
-        button:hover { background: #1d4ed8; }
-        .tab-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
-        .tab-btn { flex: 1; padding: 10px; background: #334155; border: none; color: white; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .tab-btn.active { background: #2563eb; }
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --accent: #38bdf8;
+            --accent-gradient: linear-gradient(135deg, #3b82f6, #06b6d4);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg-color); color: var(--text-main); padding: 12px; margin: 0; }
+        .container { max-width: 450px; margin: auto; }
+        
+        .wallet-card { 
+            background: var(--accent-gradient); 
+            color: white; padding: 20px; border-radius: 20px; text-align: center; margin-bottom: 15px; 
+            box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3); 
+        }
+        .wallet-card h3 { margin: 0; font-size: 13px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
+        .wallet-card h1 { margin: 8px 0 0 0; font-size: 32px; font-weight: 800; }
+
+        .tab-buttons { display: flex; gap: 8px; margin-bottom: 15px; background: rgba(15, 23, 42, 0.8); padding: 5px; border-radius: 14px; border: 1px solid var(--border); }
+        .tab-btn { flex: 1; padding: 12px; background: transparent; border: none; color: var(--text-muted); border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 14px; transition: 0.3s; }
+        .tab-btn.active { background: var(--accent-gradient); color: white; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); }
+
+        .card { background: var(--card-bg); backdrop-filter: blur(10px); padding: 20px; border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); margin-bottom: 15px; border: 1px solid var(--border); }
+        h2 { text-align: center; color: var(--accent); margin-top: 0; font-size: 18px; font-weight: 700; margin-bottom: 15px; }
+        
+        label { font-weight: 600; margin-top: 12px; display: block; font-size: 13px; color: var(--text-muted); }
+        select, input { width: 100%; padding: 14px; margin-top: 6px; border-radius: 12px; border: 1px solid var(--border); background: rgba(15, 23, 42, 0.9); color: white; box-sizing: border-box; font-size: 14px; outline: none; transition: 0.3s; }
+        select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
+        
+        .price-box { margin-top: 15px; background: rgba(15, 23, 42, 0.8); padding: 14px; border-radius: 12px; font-weight: 700; color: var(--accent); text-align: center; border: 1px solid var(--border); font-size: 16px; }
+        
+        button.action-btn { width: 100%; background: var(--accent-gradient); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 16px; font-weight: 700; margin-top: 18px; cursor: pointer; box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4); transition: 0.3s; }
+        button.action-btn:active { transform: scale(0.98); }
+
+        .bkash-box { background: rgba(244, 63, 94, 0.1); border: 1px dashed #f43f5e; padding: 15px; border-radius: 14px; text-align: center; margin-bottom: 15px; }
+        .bkash-number { font-size: 18px; font-weight: 800; color: #fb7185; margin-top: 5px; letter-spacing: 1px; }
+
         .hidden { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="wallet-card">
-            <h3 style="margin:0; font-size: 14px; opacity: 0.9;">তোর বর্তমান ব্যালেন্স</h3>
-            <h1 style="margin: 5px 0 0 0; font-size: 28px;">৳ <span id="userBalance">0.00</span></h1>
+            <h3>আপনার বর্তমান ব্যালেন্স</h3>
+            <h1>৳ <span id="userBalance">0.00</span></h1>
         </div>
 
         <div class="tab-buttons">
@@ -109,8 +128,9 @@ HTML_TEMPLATE = """
 
         <!-- অর্ডার সেকশন -->
         <div id="orderSection" class="card">
-            <h2>নতুন অর্ডার করুন</h2>
-            <label for="service">সার্ভিস নির্বাচন করো:</label>
+            <h2>সরাসরি এসএসএম সার্ভিস অর্ডার</h2>
+            
+            <label for="service">সার্ভিস নির্বাচন করুন:</label>
             <select id="service" onchange="calculatePrice()">
                 {% for key, s in services.items() %}
                     <option value="{{ key }}" data-price="{{ s.price_per_1k }}">{{ s.name }} (৳{{ s.price_per_1k }}/1k)</option>
@@ -124,24 +144,24 @@ HTML_TEMPLATE = """
             <input type="number" id="quantity" value="1000" min="10" oninput="calculatePrice()">
 
             <div class="price-box" id="totalPrice">মোট খরচ: ৳0</div>
-            <button onclick="submitOrder()">অর্ডার কনফার্ম করুন</button>
+            <button class="action-btn" onclick="submitOrder()">অর্ডার কনফার্ম করুন</button>
         </div>
 
         <!-- ডিপোজিট সেকশন -->
         <div id="depositSection" class="card hidden">
-            <h2>বিকাশে টাকা অ্যাড (মিন: ১০৳)</h2>
-            <p style="font-size: 13px; color: #94a3b8; text-align: center;">আমাদের বিকাশ পার্সোনাল নাম্বারে Send Money করে নিচে ট্রানজেকশন আইডি দাও।</p>
-            <div style="background: #0f172a; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; color: #fbbf24; margin-bottom: 10px;">
-                বিকাশ পার্সোনাল: 01605969856
+            <h2>বিকাশ ব্যালেন্স যোগ করুন</h2>
+            <div class="bkash-box">
+                <span style="font-size: 13px; color: #cbd5e1;">আমাদের বিকাশ পার্সোনাল নাম্বারে Send Money করুন:</span>
+                <div class="bkash-number">01605969856</div>
             </div>
             
-            <label for="depAmount">পরিমাণ (টাকা):</label>
-            <input type="number" id="depAmount" placeholder="১০" min="10" required>
+            <label for="depAmount">টাকার পরিমাণ:</label>
+            <input type="number" id="depAmount" placeholder="যেমন: ১০০" min="10" required>
 
             <label for="trxId">বিকাশ ট্রানজেকশন আইডি (TrxID):</label>
-            <input type="text" id="trxId" placeholder="9N7X..." required>
+            <input type="text" id="trxId" placeholder="যেমন: 9N7X..." required>
 
-            <button onclick="submitDeposit()">পেমেন্ট সাবমিট করো</button>
+            <button class="action-btn" onclick="submitDeposit()">পেমেন্ট সাবমিট করুন</button>
         </div>
     </div>
 
@@ -150,8 +170,8 @@ HTML_TEMPLATE = """
         tg.expand();
         let userTgId = tg.initDataUnsafe?.user?.id || "12345";
         let username = tg.initDataUnsafe?.user?.username || "Unknown";
+        let firstName = tg.initDataUnsafe?.user?.first_name || "User";
 
-        // ব্যালেন্স লোড করার ফেচ
         fetch('/get_balance?user_id=' + userTgId)
             .then(res => res.json())
             .then(data => {
@@ -186,7 +206,7 @@ HTML_TEMPLATE = """
             const quantity = document.getElementById('quantity').value;
 
             if(!link || !quantity || quantity <= 0) {
-                alert("দয়া করে সঠিক লিংক ও পরিমাণ দাও!");
+                alert("দয়া করে সঠিক লিংক ও পরিমাণ দিন!");
                 return;
             }
 
@@ -205,14 +225,14 @@ HTML_TEMPLATE = """
             const trxId = document.getElementById('trxId').value;
 
             if(!amount || amount < 10 || !trxId) {
-                alert("ন্যূনতম ১০ টাকা এবং সঠিক TrxID দাও!");
+                alert("ন্যূনতম ১০ টাকা এবং সঠিক TrxID দিন!");
                 return;
             }
 
             fetch('/api/deposit', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({user_id: userTgId, username: username, amount: amount, trx_id: trxId})
+                body: JSON.stringify({user_id: userTgId, username: username, first_name: firstName, amount: amount, trx_id: trxId})
             }).then(res => res.json()).then(data => {
                 alert(data.message);
                 tg.close();
@@ -262,14 +282,16 @@ def api_order():
   if db[user_id]["balance"] < total_cost:
     return {
         "success": False,
-        "message": "তোর পর্যাপ্ত ব্যালেন্স নেই! আগে ব্যালেন্স অ্যাড কর।",
+        "message": (
+            "পর্যাপ্ত ব্যালেন্স নেই! প্রথমে বিকাশে পেমেন্ট করে ব্যালেন্স যোগ করুন।"
+        ),
     }
 
-  # SMM প্যানেলে অর্ডার প্লেস করা
+  # SMM প্যানেলে অটোমেটিক অর্ডার প্লেস
   payload = {
       "key": SMM_API_KEY,
       "action": "add",
-      "service": service_info["id"],
+      "service": service_key,
       "link": link,
       "quantity": quantity,
   }
@@ -280,12 +302,12 @@ def api_order():
     save_db(db)
     return {
         "success": True,
-        "message": f"আলহামদুলিল্লাহ! অর্ডার সফল হয়েছে। অর্ডার আইডি: {resp['order']}",
+        "message": f"অর্ডার সফল হয়েছে! অর্ডার আইডি: {resp['order']}",
     }
   else:
     return {
         "success": False,
-        "message": f"অর্ডার ফেইল করেছে: {resp.get('error', 'অজানা সমস্যা')}",
+        "message": f"অর্ডার ফেইল করেছে: {resp.get('error', 'টেকনিক্যাল সমস্যা')}",
     }
 
 
@@ -294,51 +316,63 @@ def api_deposit():
   data = request.json
   user_id = str(data.get("user_id"))
   username = data.get("username", "Unknown")
+  first_name = data.get("first_name", "User")
   amount = float(data.get("amount"))
   trx_id = data.get("trx_id")
 
-  # অ্যাডমিনকে টেলিগ্রামে নোটিফিকেশন পাঠানো যাতে সে এপ্রুভ করতে পারে
   if ADMIN_CHAT_ID and ADMIN_CHAT_ID != "YOUR_ADMIN_TELEGRAM_ID":
     msg = (
-        f"🔔 **নতুন ডিপোজিট রিকোয়েস্ট!**\n\n👤 ইউজার আইডি: `{user_id}`\n🌐 ইউজারনেম:"
-        f" @{username}\n💰 পরিমাণ: ৳{amount}\n💳 TrxID:"
-        f" `{trx_id}`\n\nএপ্রুভ করতে নিচের কমান্ড দাও:\n`/addbal {user_id}"
-        f" {amount}`"
+        f"🔔 **নতুন ডিপোজিট রিকোয়েস্ট!**\n\n👤 নাম: {first_name} (@{username})\n🆔"
+        f" আইডি: `{user_id}`\n💰 পরিমাণ: ৳{amount}\n💳 TrxID:"
+        f" `{trx_id}`\n\nএপ্রুভ করতে নিচের বাটনে ক্লিক করুন:"
     )
+    keyboard = {
+        "inline_keyboard": [[{
+            "text": f"✅ এপ্রুভ করুন (৳{amount})",
+            "callback_data": f"app_{user_id}_{amount}",
+        }]]
+    }
     requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json={"chat_id": ADMIN_CHAT_ID, "text": msg, "parse_mode": "Markdown"},
+        json={
+            "chat_id": ADMIN_CHAT_ID,
+            "text": msg,
+            "parse_mode": "Markdown",
+            "reply_markup": keyboard,
+        },
     )
 
   return {
       "success": True,
       "message": (
-          "পেমেন্ট রিকোয়েস্ট সফলভাবে সাবমিট হয়েছে! অ্যাডমিন যাচাই করে ব্যালেন্স"
-          " যোগ করে দেবে।"
+          "পেমেন্ট রিকোয়েস্ট সাবমিট হয়েছে! অ্যাডমিন যাচাই করে দ্রুত ব্যালেন্স"
+          " যোগ করে দেবেন।"
       ),
   }
 
 
-# ==================== টেলিগ্রাম বট ওয়েবহুক ও কমান্ড ====================
+# ==================== টেলিগ্রাম বট ওয়েবহুক ====================
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
   data = request.get_json()
-  if data and "message" in data:
+  if not data:
+    return "OK", 200
+
+  if "message" in data:
     chat_id = data["message"]["chat"]["id"]
     text = data["message"].get("text", "")
-    user_id = str(data["message"]["from"]["id"])
 
     if text.startswith("/start"):
       web_app_url = "https://smm-botbd.onrender.com"
       payload = {
           "chat_id": chat_id,
           "text": (
-              "আসসালামু আলাইকুম বদ্দা! আমাদের অফিশিয়াল SMM প্যানেল মিনি অ্যাপে"
-              " স্বাগতম। নিচে ক্লিক করে অর্ডার করো:"
+              "আসসালামু আলাইকুম!\n\nআমাদের অফিশিয়াল SMM প্যানেলে আপনাকে স্বাগতম।"
+              " সেবা নিতে নিচের বাটনে ক্লিক করে মিনি অ্যাপ খুলুন:"
           ),
           "reply_markup": {
               "inline_keyboard": [[{
-                  "text": "🚀 এসএসএম প্যানেল মিনি অ্যাপ ওপেন করো",
+                  "text": "🚀 এসএসএম প্যানেল মিনি অ্যাপ খুলুন",
                   "web_app": {"url": web_app_url},
               }]]
           },
@@ -347,39 +381,49 @@ def webhook():
           f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload
       )
 
-    # অ্যাডমিনের জন্য ব্যালেন্স এপ্রুভ করার কমান্ড: /addbal <user_id> <amount>
-    elif text.startswith("/addbal") and str(chat_id) == str(ADMIN_CHAT_ID):
-      parts = text.split()
-      if len(parts) == 3:
-        target_user = parts[1]
-        add_amount = float(parts[2])
-        db = load_db()
-        if target_user not in db:
-          db[target_user] = {"balance": 0.0}
-        db[target_user]["balance"] += add_amount
-        save_db(db)
+  elif "callback_query" in data:
+    cq = data["callback_query"]
+    cq_id = cq["id"]
+    data_val = cq.get("data", "")
+    admin_chat_id = cq["message"]["chat"]["id"]
 
-        # ইউজারকে জানানো
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={
-                "chat_id": target_user,
-                "text": (
-                    f"আলহামদুলিল্লাহ বদ্দা! তোর একাউন্টে ৳{add_amount} যোগ করা"
-                    " হয়েছে।"
-                ),
-            },
-        )
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": (
-                    f"সফল! ইউজার {target_user}-কে ৳{add_amount} ব্যালেন্স দেওয়া"
-                    " হয়েছে।"
-                ),
-            },
-        )
+    if data_val.startswith("app_"):
+      parts = data_val.split("_")
+      target_user = parts[1]
+      add_amount = float(parts[2])
+
+      db = load_db()
+      if target_user not in db:
+        db[target_user] = {"balance": 0.0}
+      db[target_user]["balance"] += add_amount
+      save_db(db)
+
+      requests.post(
+          f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+          json={
+              "chat_id": target_user,
+              "text": (
+                  f"আলহামদুলিল্লাহ! আপনার একাউন্টে ৳{add_amount} সফলভাবে যোগ করা"
+                  " হয়েছে।"
+              ),
+          },
+      )
+
+      requests.post(
+          f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+          json={
+              "chat_id": admin_chat_id,
+              "text": (
+                  f"✅ সফলভাবে ইউজার {target_user}-কে ৳{add_amount} ব্যালেন্স"
+                  " এপ্রুভ করা হয়েছে!"
+              ),
+          },
+      )
+
+      requests.post(
+          f"https://api.telegram.org/bot{BOT_TOKEN}/answercallbackquery",
+          json={"callback_query_id": cq_id, "text": "এপ্রুভড হয়েছে!"},
+      )
 
   return "OK", 200
 
