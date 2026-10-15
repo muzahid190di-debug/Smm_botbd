@@ -237,6 +237,13 @@ async def main():
   await telegram_app.initialize()
   await telegram_app.start()
 
+  # 🔥 অটোমেটিক ওয়েবহুক সেট করার চমৎকার কোড (কোনো ব্রাউজার বা লিংক লাগবে না)
+  if BOT_TOKEN and BOT_TOKEN != "YOUR_TELEGRAM_BOT_TOKEN":
+    webhook_url = f"https://smm-botbd.onrender.com/{BOT_TOKEN}"
+    requests.get(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
+    )
+
   # Render-এর জন্য ফ্লাস্ক সার্ভার পোর্ট কনফিগারেশন
   port = int(os.environ.get("PORT", 5000))
   app.run(host="0.0.0.0", port=port)
