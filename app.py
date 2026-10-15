@@ -10,7 +10,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 SMM_API_KEY = os.environ.get("SMM_API_KEY", "YOUR_BD_SMM_PANEL_API_KEY")
 SMM_API_URL = "https://bdsmmpanel.com/api/v2"
 
-# ইউজার ডাটা এবং ওয়ালেট ব্যালেন্স জমানোর সিম্পল ফাইল ডাটাবেস
+# ইউজার ডাটা এবং ওয়ালেট ব্যালেন্স জমানোর ফাইল ডাটাবেস
 DB_FILE = "users_db.json"
 
 
@@ -199,8 +199,23 @@ def index():
   return render_template_string(HTML_TEMPLATE, services=SERVICES_CONFIG)
 
 
-# ==================== টেলিগ্রাম বট ও সার্ভার রান লজিক ====================
+# ==================== টেলিগ্রাম বট হ্যান্ডলার ও সার্ভার লজিক ====================
 telegram_app = None
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  web_app_url = "https://smm-botbd.onrender.com"
+  keyboard = [[
+      InlineKeyboardButton(
+          "🚀 এসএসএম প্যানেল মিনি অ্যাপ খুলুন",
+          web_app=WebAppInfo(url=web_app_url),
+      )
+  ]]
+  reply_markup = InlineKeyboardMarkup(keyboard)
+  await update.message.reply_text(
+      "স্বাগতম বদ্দা! নিচের বাটনে ক্লিক করে খুব সহজে অর্ডার করো:",
+      reply_markup=reply_markup,
+  )
 
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
@@ -215,6 +230,10 @@ def webhook():
 async def main():
   global telegram_app
   telegram_app = Application.builder().token(BOT_TOKEN).build()
+
+  # /start কমান্ড হ্যান্ডলার রেজিস্টার করা হলো
+  telegram_app.add_handler(CommandHandler("start", start))
+
   await telegram_app.initialize()
   await telegram_app.start()
 
