@@ -24,41 +24,65 @@ def save_db(data):
     json.dump(data, f, indent=4)
 
 
-# SMM প্যানেল থেকে সমস্ত লাইভ সার্ভিস ও মিনি/ম্যাক্স লিমিট সহ ফেচ করার লজিক
+# SMM প্যানেল থেকে সমস্ত লাইভ সার্ভিস ফেচ ও প্রফিট মার্জিন যোগ করার ফাংশন
 def get_smm_services():
   try:
     payload = {"key": SMM_API_KEY, "action": "services"}
     response = requests.post(SMM_API_URL, data=payload)
     if response.status_code == 200:
-      services = response.json()
-      formatted_services = {}
-      for s in services:
-        original_rate = float(s.get("rate", 0))
+      data = response.json()
+      # যদি রেসপন্সটি লিস্ট আকারে আসে
+      if isinstance(data, list):
+        formatted_services = {}
+        for s in data:
+          try:
+            original_rate = float(s.get("rate", 0))
 
-        # তোর চাহিদামতো স্মার্ট প্রফিট মার্জিন যোগ করা
-        if original_rate <= 50:
-          profit = 10
-        elif original_rate <= 150:
-          profit = 20
-        elif original_rate <= 300:
-          profit = 35
-        else:
-          profit = 50
+            # তোর চাহিদামতো স্মার্ট প্রফিট মার্জিন (ছোট অফারে ১০-২০ টাকা, বড় অফারে ৩০-৫০ টাকা)
+            if original_rate <= 10:
+              profit = 5
+            elif original_rate <= 50:
+              profit = 15
+            elif original_rate <= 150:
+              profit = 25
+            else:
+              profit = 40
 
-        final_rate = round(original_rate + profit, 2)
-        category = s.get("category", "General")
+            final_rate = round(original_rate + profit, 2)
+            category = s.get("category", "General Services")
+            service_id = str(s.get("service"))
 
-        formatted_services[str(s["service"])] = {
-            "name": s["name"],
-            "category": category,
-            "price_per_1k": final_rate,
-            "min": int(s.get("min", 10)),
-            "max": int(s.get("max", 10000)),
-        }
-      return formatted_services
-  except Exception:
-    pass
-  return {}
+            formatted_services[service_id] = {
+                "name": s.get("name", "Unnamed Service"),
+                "category": category,
+                "price_per_1k": final_rate,
+                "min": int(s.get("min", 10)),
+                "max": int(s.get("max", 10000)),
+            }
+          except Exception:
+            continue
+        if formatted_services:
+          return formatted_services
+  except Exception as e:
+    print("API Error:", e)
+
+  # কোনো কারণে API কাজ না করলে ডিফল্ট ফলব্যাক সার্ভিস যাতে অ্যাপ ক্র্যাশ না করে
+  return {
+      "1": {
+          "name": "🔥 Facebook Followers (Non-Drop)",
+          "category": "Facebook",
+          "price_per_1k": 120.0,
+          "min": 50,
+          "max": 10000,
+      },
+      "2": {
+          "name": "⚡ YouTube Subscribers (Real)",
+          "category": "YouTube",
+          "price_per_1k": 350.0,
+          "min": 10,
+          "max": 5000,
+      },
+  }
 
 
 app = Flask(__name__)
@@ -70,7 +94,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BD SMM Panel Mini App</title>
+    <title>Cheap SMM BD Mini App</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -100,9 +124,9 @@ HTML_TEMPLATE = """
         .card { background: var(--card-bg); padding: 16px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.4); margin-bottom: 12px; border: 1px solid var(--border); }
         h2 { text-align: center; color: var(--accent); margin-top: 0; font-size: 16px; font-weight: 700; margin-bottom: 12px; }
 
-        /* ক্যাটাগরি বক্স সেকশন */
-        .category-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
-        .cat-box { background: #0f172a; border: 1px solid var(--border); padding: 12px; border-radius: 10px; text-align: center; cursor: pointer; font-weight: 600; font-size: 13px; transition: 0.2s; color: var(--text-muted); }
+        /* ক্যাটাগরি গ্রিড */
+        .category-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; max-height: 160px; overflow-y: auto; padding-right: 4px; }
+        .cat-box { background: #0f172a; border: 1px solid var(--border); padding: 10px; border-radius: 10px; text-align: center; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .cat-box:hover, .cat-box.active { border-color: var(--accent); color: var(--accent); background: rgba(56, 189, 248, 0.05); }
         
         label { font-weight: 600; margin-top: 10px; display: block; font-size: 12px; color: var(--text-muted); }
@@ -137,14 +161,10 @@ HTML_TEMPLATE = """
             <h2>সোশ্যাল মিডিয়া সার্ভিস অর্ডার</h2>
             
             <label>প্লাটফর্ম বা ক্যাটাগরি বেছে নিন:</label>
-            <div class="category-grid" id="categoryGrid">
-                <!-- ডায়নামিকভাবে ক্যাটাগরিগুলো এখানে আসবে -->
-            </div>
+            <div class="category-grid" id="categoryGrid"></div>
 
             <label for="service">নির্দিষ্ট সার্ভিস:</label>
-            <select id="service" onchange="updateServiceLimits()">
-                <!-- সার্ভিস লিস্ট -->
-            </select>
+            <select id="service" onchange="updateServiceLimits()"></select>
             <div class="info-limits" id="limitsInfo">মিনিমাম: ১০ | ম্যাক্সিমাম: ১০০০০</div>
 
             <label for="link">টার্গেট লিংক (Profile/Video URL):</label>
@@ -185,14 +205,12 @@ HTML_TEMPLATE = """
         const allServices = {{ services | tojson }};
         let currentCategory = "";
 
-        // ব্যালেন্স ফেচ
         fetch('/get_balance?user_id=' + userTgId)
             .then(res => res.json())
             .then(data => {
                 document.getElementById('userBalance').innerText = data.balance.toFixed(2);
             });
 
-        // ক্যাটাগরিগুলো আলাদা করা
         function initCategories() {
             const categories = [...new Set(Object.values(allServices).map(s => s.category))];
             const grid = document.getElementById('categoryGrid');
@@ -202,6 +220,7 @@ HTML_TEMPLATE = """
                 const div = document.createElement('div');
                 div.className = "cat-box" + (index === 0 ? " active" : "");
                 div.innerText = cat;
+                div.title = cat;
                 div.onclick = () => selectCategory(cat, div);
                 grid.appendChild(div);
                 if(index === 0) selectCategory(cat, div);
@@ -274,6 +293,11 @@ HTML_TEMPLATE = """
             const quantity = document.getElementById('quantity').value;
             const selectedOpt = document.getElementById('service').selectedOptions[0];
             
+            if(!selectedOpt) {
+                alert("দয়া করে একটি সার্ভিস সিলেক্ট করুন!");
+                return;
+            }
+
             const min = parseInt(selectedOpt.getAttribute('data-min'));
             const max = parseInt(selectedOpt.getAttribute('data-max'));
 
@@ -486,7 +510,7 @@ def webhook():
       )
 
       requests.post(
-          f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+          f"https://api.telegram.org/bot{BOT_TOKEN},sendMessage",
           json={
               "chat_id": admin_chat_id,
               "text": (
