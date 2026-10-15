@@ -1,8 +1,8 @@
-import os
 import json
+import os
 import requests
-from flask import Flask, request, render_template_string
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from flask import Flask, render_template_string, request
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ==================== কনফিগারেশন ====================
@@ -13,21 +13,32 @@ SMM_API_URL = "https://bdsmmpanel.com/api/v2"
 # ইউজার ডাটা এবং ওয়ালেট ব্যালেন্স জমানোর সিম্পল ফাইল ডাটাবেস
 DB_FILE = "users_db.json"
 
+
 def load_db():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
-    return {}
+  if os.path.exists(DB_FILE):
+    with open(DB_FILE, "r") as f:
+      return json.load(f)
+  return {}
+
 
 def save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+  with open(DB_FILE, "w") as f:
+    json.dump(data, f, indent=4)
+
 
 # সার্ভিস লিস্ট ও প্রফিট প্রাইস (টাকা)
 SERVICES_CONFIG = {
-    "1": {"id": 101, "name": "🔥 Facebook Followers (Non-Drop)", "price_per_1k": 120},
+    "1": {
+        "id": 101,
+        "name": "🔥 Facebook Followers (Non-Drop)",
+        "price_per_1k": 120,
+    },
     "2": {"id": 202, "name": "⚡ YouTube Subscribers (Real)", "price_per_1k": 350},
-    "3": {"id": 303, "name": "🚀 TikTok Followers (Instant)", "price_per_1k": 150}
+    "3": {
+        "id": 303,
+        "name": "🚀 TikTok Followers (Instant)",
+        "price_per_1k": 150,
+    },
 }
 
 app = Flask(__name__)
@@ -114,7 +125,6 @@ HTML_TEMPLATE = """
         
         let userTgId = tg.initDataUnsafe?.user?.id || "12345";
 
-        // ডেমো ব্যালেন্স সিঙ্ক (ব্যাকএন্ড থেকে রিয়েল ডাটা আসবে)
         document.getElementById('userBalance').innerText = "500.00"; 
 
         function switchTab(tab) {
@@ -183,17 +193,37 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/')
+
+@app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE, services=SERVICES_CONFIG)
+  return render_template_string(HTML_TEMPLATE, services=SERVICES_CONFIG)
 
-# ==================== টেলিগ্রাম বট ও ব্যাকএন্ড লজিক ====================
-telegram_app = None # পরে ইনিশিয়ালাইজ হবে
 
-# ফ্লাস্কের মাধ্যমে বটের রাউট হ্যান্ডেল করার প্রস্তুতি
-@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+# ==================== টেলিগ্রাম বট ও সার্ভার রান লজিক ====================
+telegram_app = None
+
+
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    json_str = request.get_data().decode('UTF-8')
+  if telegram_app and telegram_app.bot:
+    json_str = request.get_data().decode("UTF-8")
     update = Update.de_json(json.loads(json_str), telegram_app.bot)
     telegram_app.update_queue.put_nowait(update)
-    return 'OK', 200
+  return "OK", 200
+
+
+async def main():
+  global telegram_app
+  telegram_app = Application.builder().token(BOT_TOKEN).build()
+  await telegram_app.initialize()
+  await telegram_app.start()
+
+  # Render-এর জন্য ফ্লাস্ক সার্ভার পোর্ট কনফিগারেশন
+  port = int(os.environ.get("PORT", 5000))
+  app.run(host="0.0.0.0", port=port)
+
+
+if __name__ == "__main__":
+  import asyncio
+
+  asyncio.run(main())
